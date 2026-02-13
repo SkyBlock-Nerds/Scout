@@ -1,0 +1,30 @@
+{
+  "watchers": [
+    {
+      "enabled": true,
+      "className": "example_value",
+      "url": "https://example.com/",
+      "headers": {
+        "example_value": "example_value"
+      },
+      "interval": 1,
+      "timeUnit": "NANOSECONDS",
+      "handlerClass": "example_value",
+      "webhookUrl": "https://example.com/",
+      "alertRoleId": "1234567890123456789"
+    }
+  ],
+  "statusPageConfig": {
+    "operationalColor": "example_value",
+    "degradedColor": "example_value",
+    "partialOutageColor": "example_value",
+    "majorOutageColor": "example_value",
+    "maintenanceColor": "example_value",
+    "maxDescriptionLength": 1,
+    "includeResolvedIncidents": true,
+    "includeCompletedMaintenances": true,
+    "enableStatusAlerts": true,
+    "statusAlertRoleName": "example_value",
+    "enableMaintenanceAlerts": true
+  }
+}

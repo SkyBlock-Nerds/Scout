@@ -1,0 +1,96 @@
+# Usage:
+# - Builds the Scout application and packages it into a Docker container.
+# - The container is pushed to GHCR and deployed to the vps.
+
+# Requirements:
+# - Config file on the vps. (should be named `config.json`)
+# - These secrets must be set up in the repository settings:
+#   - SSH_PRIVATE_KEY: Private SSH key for accessing the vps
+#   - SSH_USER: The SSH username for the vps
+#   - SSH_HOST: The SSH host (IP or domain) of the vps
+#   - WORK_DIR: The directory on the vps where the app is/will be deployed
+#   - SENTRY_DSN: Sentry DSN for error reporting (optional, Sentry disabled if empty)
+#   - CONFIG_FOLDER_PATH: Path to the config file folder on the vps
+
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      metricsPort:
+        description: 'Prometheus metrics port:'
+        required: false
+        default: '9192'
+        type: string
+      useOldImage:
+        description: 'Use old Docker image:'
+        required: true
+        default: false
+        type: boolean
+      dockerNetwork:
+        description: 'Docker network to join (if needed):'
+        required: false
+        default: ''
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/scout:latest
+  CONTAINER_NAME: scout
+  USE_OLD_IMAGE: ${{ github.event.inputs.useOldImage || 'false' }}
+  METRICS_PORT: ${{ github.event.inputs.metricsPort || '9192' }}
+  DOCKER_NETWORK: ${{ github.event.inputs.dockerNetwork || secrets.DOCKER_NETWORK || '' }}
+
+jobs:
+  publish:
+    name: Publish image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        if: ${{ env.USE_OLD_IMAGE == 'false' }}
+        uses: actions/checkout@v6.0.2
+
+      - name: Login to GHCR
+        if: ${{ env.USE_OLD_IMAGE == 'false' }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push Docker image
+        if: ${{ env.USE_OLD_IMAGE == 'false' }}
+        run: |
+          docker build . --tag ${{ env.REGISTRY }}/$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]') \
+            --build-arg BRANCH_NAME=${{ github.ref_name }}
+          docker push ${{ env.REGISTRY }}/$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+
+  deploy:
+    needs: publish
+    name: Deploy image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install SSH keys
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/id_rsa
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} > ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          cd ${{ secrets.WORK_DIR }}
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+          sudo docker pull ${{ env.REGISTRY }}/$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          sudo docker stop $(echo "${{ env.CONTAINER_NAME }}" | tr '[:upper:]' '[:lower:]') || true
+          sudo docker rm $(echo "${{ env.CONTAINER_NAME }}" | tr '[:upper:]' '[:lower:]') || true
+          sudo docker rmi $(sudo docker images $(echo "${{ env.REGISTRY }}/${{ github.actor }}/${{ env.CONTAINER_NAME }}" | tr '[:upper:]' '[:lower:]') -q) -f || true
+          sudo docker run -d --name $(echo "${{ env.CONTAINER_NAME }}" | tr '[:upper:]' '[:lower:]') \
+            -p 127.0.0.1:${{ env.METRICS_PORT }}:${{ env.METRICS_PORT }} \
+            ${{ env.DOCKER_NETWORK != '' && format('--network {0}', env.DOCKER_NETWORK) || '' }} \
+            -v ${{ secrets.CONFIG_FOLDER_PATH }}/config.json:/app/config.json \
+            -e "JAVA_OPTS=-Dmetrics.port=${{ env.METRICS_PORT }}" \
+            -e "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" \
+            ${{ env.REGISTRY }}/$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          EOF
+
+      - name: Cleanup SSH keys
+        run: rm -rf ~/.ssh
