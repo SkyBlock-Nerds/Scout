@@ -18,23 +18,11 @@ public class StatusPageDataHandler implements URLWatcher.DataHandler {
     private final StatusPageConfig config;
     private final StatusPageChangeDetector changeDetector;
     private final StatusPageEmbedFactory embedFactory;
-    private final String webhookUrl;
-    private final String alertRoleId;
 
     public StatusPageDataHandler() {
         this.config = Main.getConfig().getStatusPageConfig();
         this.changeDetector = new StatusPageChangeDetector(config);
         this.embedFactory = new StatusPageEmbedFactory(config);
-        this.webhookUrl = null;
-        this.alertRoleId = null;
-    }
-
-    public StatusPageDataHandler(StatusPageConfig config, String webhookUrl, String alertRoleId) {
-        this.config = config;
-        this.changeDetector = new StatusPageChangeDetector(config);
-        this.embedFactory = new StatusPageEmbedFactory(config);
-        this.webhookUrl = webhookUrl;
-        this.alertRoleId = alertRoleId;
     }
 
     @Override
@@ -60,17 +48,15 @@ public class StatusPageDataHandler implements URLWatcher.DataHandler {
                 hasMaintenanceChanges(oldData, newData) && config.isEnableMaintenanceAlerts();
 
             if (!embedsToSend.isEmpty()) {
+                String resolvedWebhookUrl = Main.getWebhookUrlForHandler(this.getClass().getName());
+                String resolvedAlertRoleId = Main.getAlertRoleIdForHandler(this.getClass().getName());
+
                 String content = null;
-                if (shouldPing && alertRoleId != null && !alertRoleId.isBlank()) {
-                    content = "<@&" + alertRoleId + ">";
+                if (shouldPing && !resolvedAlertRoleId.isBlank()) {
+                    content = "<@&" + resolvedAlertRoleId + ">";
                 }
 
-                if (webhookUrl != null) {
-                    DiscordWebhook.send(webhookUrl, content, embedsToSend);
-                } else {
-                    log.warn("No webhook URL configured for status page handler");
-                }
-
+                DiscordWebhook.send(resolvedWebhookUrl, content, embedsToSend);
                 log.info("Sent {} status embeds via webhook", embedsToSend.size());
             } else {
                 log.debug("No significant status changes detected");
