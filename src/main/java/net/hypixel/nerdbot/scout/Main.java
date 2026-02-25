@@ -5,8 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import net.hypixel.nerdbot.marmalade.json.DataSerialization;
 import net.hypixel.nerdbot.scout.config.WatcherAppConfig;
 import net.hypixel.nerdbot.scout.config.WatcherConfig;
+import net.hypixel.nerdbot.scout.handler.update.SkyBlockUpdateDataHandler;
 import net.hypixel.nerdbot.scout.watcher.HypixelThreadURLWatcher;
 import net.hypixel.nerdbot.scout.watcher.URLWatcher;
+
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -17,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 
 @Slf4j
@@ -72,10 +76,11 @@ public class Main {
     /**
      * Finds the webhook URL configured for the watcher that uses the given handler class.
      */
-    public static String getWebhookUrlForHandler(String handlerClassName) {
+    public static @Nullable String getWebhookUrlForHandler(String handlerClassName) {
         return activeWatcherConfigs.stream()
             .filter(wc -> handlerClassName.equals(wc.getHandlerClass()))
             .map(WatcherConfig::getWebhookUrl)
+            .filter(Objects::nonNull)
             .findFirst()
             .orElse(null);
     }
@@ -83,15 +88,16 @@ public class Main {
     /**
      * Finds the alert role ID configured for the watcher that uses the given handler class.
      */
-    public static String getAlertRoleIdForHandler(String handlerClassName) {
+    public static @Nullable String getAlertRoleIdForHandler(String handlerClassName) {
         return activeWatcherConfigs.stream()
             .filter(wc -> handlerClassName.equals(wc.getHandlerClass()))
             .map(WatcherConfig::getAlertRoleId)
+            .filter(Objects::nonNull)
             .findFirst()
             .orElse(null);
     }
 
-    private static WatcherAppConfig loadConfig(String path) {
+    private static @Nullable WatcherAppConfig loadConfig(String path) {
         try (Reader reader = Files.newBufferedReader(Path.of(path), StandardCharsets.UTF_8)) {
             return DataSerialization.GSON.fromJson(reader, WatcherAppConfig.class);
         } catch (IOException e) {
@@ -153,6 +159,13 @@ public class Main {
                 watcher.startWatching(watcherConfig.getInterval(), watcherConfig.getTimeUnit(), handler);
                 activeWatchers.add(watcher);
             } else if (watcher instanceof HypixelThreadURLWatcher hypixelWatcher) {
+                String webhookUrl = watcherConfig.getWebhookUrl();
+                String alertRoleId = watcherConfig.getAlertRoleId();
+
+                hypixelWatcher.setThreadHandler(thread ->
+                    SkyBlockUpdateDataHandler.handleThread(thread, webhookUrl, alertRoleId)
+                );
+
                 log.info("Starting HypixelThreadURLWatcher on {} (interval={} {})", watcherConfig.getUrl(), watcherConfig.getInterval(), watcherConfig.getTimeUnit());
 
                 activeWatcherConfigs.add(watcherConfig);

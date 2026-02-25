@@ -12,6 +12,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -44,11 +45,11 @@ public abstract class URLWatcher implements AutoCloseable {
         this(url, null, true);
     }
 
-    public URLWatcher(String url, Map<String, String> headers) {
+    public URLWatcher(String url, @Nullable Map<String, String> headers) {
         this(url, headers, true);
     }
 
-    protected URLWatcher(String url, Map<String, String> headers, boolean loadInitialContent) {
+    protected URLWatcher(String url, @Nullable Map<String, String> headers, boolean loadInitialContent) {
         this.url = url;
         this.headers = headers;
         this.client = new OkHttpClient.Builder()
@@ -152,7 +153,7 @@ public abstract class URLWatcher implements AutoCloseable {
         log.info("Stopped watching {}", url);
     }
 
-    public String fetchContent() {
+    public @Nullable String fetchContent() {
         log.debug("Fetching content from " + url);
 
         Request.Builder requestBuilder = new Request.Builder().url(url);
@@ -242,7 +243,7 @@ public abstract class URLWatcher implements AutoCloseable {
     }
 
     public interface DataHandler {
-        void handleData(String oldContent, String newContent, List<Tuple<String, Object, Object>> changedValues);
+        void handleData(@Nullable String oldContent, String newContent, List<Tuple<String, Object, Object>> changedValues);
     }
 
     @Override
