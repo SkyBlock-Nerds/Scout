@@ -9,6 +9,8 @@ import net.hypixel.nerdbot.scout.ScoutMetrics;
 import net.hypixel.nerdbot.scout.webhook.DiscordWebhook;
 import net.hypixel.nerdbot.scout.watcher.URLWatcher;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -26,7 +28,7 @@ public class StatusPageDataHandler implements URLWatcher.DataHandler {
     }
 
     @Override
-    public void handleData(String oldContent, String newContent, List<Tuple<String, Object, Object>> changedValues) {
+    public void handleData(@Nullable String oldContent, String newContent, List<Tuple<String, Object, Object>> changedValues) {
         log.info("Status page data changed!");
         ScoutMetrics.DATA_CHANGES_DETECTED.labels("status-page").inc();
 
@@ -44,20 +46,24 @@ public class StatusPageDataHandler implements URLWatcher.DataHandler {
                 processMaintenances(oldData, newData)
             ).flatMap(List::stream).toList();
 
-            boolean shouldPing = hasIncidentChanges(oldData, newData) && config.isEnableStatusAlerts() ||
-                hasMaintenanceChanges(oldData, newData) && config.isEnableMaintenanceAlerts();
+            boolean shouldPing = (hasIncidentChanges(oldData, newData) && config.isEnableStatusAlerts()) ||
+                (hasMaintenanceChanges(oldData, newData) && config.isEnableMaintenanceAlerts());
 
             if (!embedsToSend.isEmpty()) {
                 String resolvedWebhookUrl = Main.getWebhookUrlForHandler(this.getClass().getName());
                 String resolvedAlertRoleId = Main.getAlertRoleIdForHandler(this.getClass().getName());
 
                 String content = null;
-                if (shouldPing && !resolvedAlertRoleId.isBlank()) {
+                if (shouldPing && resolvedAlertRoleId != null && !resolvedAlertRoleId.isBlank()) {
                     content = "<@&" + resolvedAlertRoleId + ">";
                 }
 
-                DiscordWebhook.send(resolvedWebhookUrl, content, embedsToSend);
-                log.info("Sent {} status embeds via webhook", embedsToSend.size());
+                if (resolvedWebhookUrl != null) {
+                    DiscordWebhook.send(resolvedWebhookUrl, content, embedsToSend);
+                    log.info("Sent {} status embeds via webhook", embedsToSend.size());
+                } else {
+                    log.warn("No webhook URL configured for status page handler");
+                }
             } else {
                 log.debug("No significant status changes detected");
             }
@@ -66,7 +72,7 @@ public class StatusPageDataHandler implements URLWatcher.DataHandler {
         }
     }
 
-    private StatusPageResponse parseStatusData(String content) {
+    private @Nullable StatusPageResponse parseStatusData(String content) {
         if (content == null || content.isEmpty()) {
             return null;
         }

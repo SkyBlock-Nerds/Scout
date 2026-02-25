@@ -9,6 +9,7 @@ import net.hypixel.nerdbot.marmalade.json.JsonUtils;
 import net.hypixel.nerdbot.marmalade.format.StringUtils;
 import net.hypixel.nerdbot.marmalade.Tuple;
 import net.hypixel.nerdbot.scout.Main;
+import org.jetbrains.annotations.Nullable;
 import net.hypixel.nerdbot.scout.ScoutMetrics;
 import net.hypixel.nerdbot.scout.webhook.DiscordWebhook;
 import net.hypixel.nerdbot.scout.watcher.URLWatcher;
@@ -20,7 +21,7 @@ import java.util.List;
 public class FireSaleDataHandler implements URLWatcher.DataHandler {
 
     @Override
-    public void handleData(String oldContent, String newContent, List<Tuple<String, Object, Object>> changedValues) {
+    public void handleData(@Nullable String oldContent, String newContent, List<Tuple<String, Object, Object>> changedValues) {
         log.info("Fire sale data changed!");
         log.debug("Changed values: " + changedValues);
         ScoutMetrics.DATA_CHANGES_DETECTED.labels("fire-sales").inc();
