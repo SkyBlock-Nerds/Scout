@@ -1,9 +1,10 @@
 package net.hypixel.nerdbot.scout.watcher;
 
 import lombok.extern.slf4j.Slf4j;
-import net.hypixel.nerdbot.scout.handler.update.SkyBlockUpdateDataHandler;
 import net.hypixel.nerdbot.scout.xml.SkyBlockThreadParser;
 import net.hypixel.nerdbot.scout.xml.SkyBlockThreadParser.HypixelThread;
+
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Comparator;
 import java.util.List;
@@ -18,7 +19,7 @@ import java.util.function.Consumer;
 public class HypixelThreadURLWatcher extends XmlURLWatcher {
 
     private final AtomicInteger lastGuid = new AtomicInteger();
-    private final Consumer<HypixelThread> threadHandler;
+    private Consumer<HypixelThread> threadHandler;
     private volatile boolean initialised;
     private final CompletableFuture<Void> baselineFuture;
     private final AtomicBoolean startScheduled = new AtomicBoolean(false);
@@ -27,15 +28,15 @@ public class HypixelThreadURLWatcher extends XmlURLWatcher {
         this(url, null, 0, null);
     }
 
-    public HypixelThreadURLWatcher(String url, Map<String, String> headers) {
+    public HypixelThreadURLWatcher(String url, @Nullable Map<String, String> headers) {
         this(url, headers, 0, null);
     }
 
-    public HypixelThreadURLWatcher(String url, Map<String, String> headers, int initialGuid) {
+    public HypixelThreadURLWatcher(String url, @Nullable Map<String, String> headers, int initialGuid) {
         this(url, headers, initialGuid, null);
     }
 
-    public HypixelThreadURLWatcher(String url, Map<String, String> headers, int initialGuid, Consumer<HypixelThread> threadHandler) {
+    public HypixelThreadURLWatcher(String url, @Nullable Map<String, String> headers, int initialGuid, @Nullable Consumer<HypixelThread> threadHandler) {
         super(url, headers, false);
         this.threadHandler = threadHandler;
         this.lastGuid.set(Math.max(0, initialGuid));
@@ -48,9 +49,11 @@ public class HypixelThreadURLWatcher extends XmlURLWatcher {
      * {@link #startWatching(long, TimeUnit)} if no handler was provided at construction time.
      */
     public void setThreadHandler(Consumer<HypixelThread> handler) {
-        // This is stored in a field that the default handler delegates to.
-        // Since HypixelThreadURLWatcher may be created reflectively with only (url, headers),
-        // we allow setting the handler afterward.
+        if (startScheduled.get()) {
+            throw new IllegalStateException("Cannot set thread handler after watcher has been started");
+        }
+
+        this.threadHandler = handler;
     }
 
     public void startWatching(long interval, TimeUnit unit) {
@@ -142,14 +145,14 @@ public class HypixelThreadURLWatcher extends XmlURLWatcher {
                 if (threadHandler != null) {
                     threadHandler.accept(thread);
                 } else {
-                    SkyBlockUpdateDataHandler.handleThread(thread);
+                    log.warn("No thread handler configured for watcher on {}, skipping thread: {}", getUrl(), thread.getTitle());
                 }
                 return;
             }
         }
     }
 
-    private List<HypixelThread> parseThreads(String content) {
+    private @Nullable List<HypixelThread> parseThreads(@Nullable String content) {
         if (content == null || content.isBlank()) {
             return null;
         }
