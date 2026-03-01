@@ -120,7 +120,7 @@ public abstract class URLWatcher implements AutoCloseable {
                 active = false;
             })
             .exceptionally(throwable -> {
-                log.error("Error fetching content asynchronously from " + url, throwable);
+                log.error("Error fetching content asynchronously from {}", url, throwable);
                 active = false;
                 return null;
             });
@@ -154,7 +154,7 @@ public abstract class URLWatcher implements AutoCloseable {
     }
 
     public @Nullable String fetchContent() {
-        log.debug("Fetching content from " + url);
+        log.debug("Fetching content from {}", url);
 
         Request.Builder requestBuilder = new Request.Builder().url(url);
 
@@ -178,20 +178,20 @@ public abstract class URLWatcher implements AutoCloseable {
                 return content;
             } else {
                 ScoutMetrics.URL_FETCHES.labels(url, "failure").inc();
-                log.error("Failed to fetch content from " + url + "! (Response: " + response + ")");
+                log.error("Failed to fetch content from {}! (Response: {})", url, response);
             }
         } catch (IOException exception) {
             double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
             ScoutMetrics.URL_FETCH_DURATION.labels(url).observe(durationSeconds);
             ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-            log.error("Failed to fetch content from " + url + "!", exception);
+            log.error("Failed to fetch content from {}!", url, exception);
         }
 
         return null;
     }
 
     public CompletableFuture<String> fetchContentAsync() {
-        log.debug("Fetching content asynchronously from " + url);
+        log.debug("Fetching content asynchronously from {}", url);
 
         Request.Builder requestBuilder = new Request.Builder().url(url);
 
@@ -211,7 +211,7 @@ public abstract class URLWatcher implements AutoCloseable {
                 double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
                 ScoutMetrics.URL_FETCH_DURATION.labels(url).observe(durationSeconds);
                 ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-                log.error("Failed to fetch content asynchronously from " + url, e);
+                log.error("Failed to fetch content asynchronously from {}", url, e);
                 future.complete(null);
             }
 
@@ -228,12 +228,12 @@ public abstract class URLWatcher implements AutoCloseable {
                         future.complete(content);
                     } else {
                         ScoutMetrics.URL_FETCHES.labels(url, "failure").inc();
-                        log.error("Failed to fetch content asynchronously from " + url + "! (Response: " + response + ")");
+                        log.error("Failed to fetch content asynchronously from {}! (Response: {})", url, response);
                         future.complete(null);
                     }
                 } catch (IOException e) {
                     ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-                    log.error("Error reading response body from " + url, e);
+                    log.error("Error reading response body from {}", url, e);
                     future.complete(null);
                 }
             }
