@@ -1,6 +1,7 @@
 package net.hypixel.nerdbot.scout.watcher;
 
 import net.hypixel.nerdbot.marmalade.Tuple;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.List;
@@ -12,11 +13,11 @@ public class XmlURLWatcher extends URLWatcher {
         super(url);
     }
 
-    public XmlURLWatcher(String url, Map<String, String> headers) {
+    public XmlURLWatcher(String url, @Nullable Map<String, String> headers) {
         super(url, headers);
     }
 
-    protected XmlURLWatcher(String url, Map<String, String> headers, boolean loadInitialContent) {
+    protected XmlURLWatcher(String url, @Nullable Map<String, String> headers, boolean loadInitialContent) {
         super(url, headers, loadInitialContent);
     }
 

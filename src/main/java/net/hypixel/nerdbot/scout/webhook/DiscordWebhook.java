@@ -4,6 +4,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
 import net.hypixel.nerdbot.scout.ScoutMetrics;
+import org.jetbrains.annotations.Nullable;
+
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -34,7 +36,7 @@ public class DiscordWebhook {
      * @param content    optional text content (can be null)
      * @param embeds     list of embed JSON objects
      */
-    public static void send(String webhookUrl, String content, List<JsonObject> embeds) {
+    public static void send(String webhookUrl, @Nullable String content, @Nullable List<JsonObject> embeds) {
         JsonObject payload = new JsonObject();
 
         if (content != null && !content.isBlank()) {
@@ -65,7 +67,7 @@ public class DiscordWebhook {
     /**
      * Creates an embed JSON object matching the Discord embed structure.
      */
-    public static JsonObject createEmbed(String title, String url, String description, int color) {
+    public static JsonObject createEmbed(@Nullable String title, @Nullable String url, @Nullable String description, int color) {
         JsonObject embed = new JsonObject();
 
         if (title != null) {

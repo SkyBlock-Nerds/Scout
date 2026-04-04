@@ -34,7 +34,7 @@ public class SkyBlockThreadParser {
             saxParser.parse(targetStream, skyblockThreadHandler);
             return skyblockThreadHandler.getSkyBlockForum().getThreadList();
         } catch (ParserConfigurationException | SAXException | IOException exception) {
-            log.error("Failed to parse content from: " + xml, exception);
+            log.warn("Failed to parse content from: {}", xml, exception);
         }
 
         return Collections.emptyList();

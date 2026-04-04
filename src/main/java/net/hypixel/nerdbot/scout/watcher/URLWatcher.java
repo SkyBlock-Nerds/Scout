@@ -3,6 +3,7 @@ package net.hypixel.nerdbot.scout.watcher;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import net.hypixel.nerdbot.marmalade.concurrent.ExecutorFactory;
 import net.hypixel.nerdbot.marmalade.format.StringUtils;
 import net.hypixel.nerdbot.marmalade.Tuple;
 import net.hypixel.nerdbot.scout.ScoutMetrics;
@@ -12,13 +13,13 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -44,11 +45,11 @@ public abstract class URLWatcher implements AutoCloseable {
         this(url, null, true);
     }
 
-    public URLWatcher(String url, Map<String, String> headers) {
+    public URLWatcher(String url, @Nullable Map<String, String> headers) {
         this(url, headers, true);
     }
 
-    protected URLWatcher(String url, Map<String, String> headers, boolean loadInitialContent) {
+    protected URLWatcher(String url, @Nullable Map<String, String> headers, boolean loadInitialContent) {
         this.url = url;
         this.headers = headers;
         this.client = new OkHttpClient.Builder()
@@ -56,11 +57,7 @@ public abstract class URLWatcher implements AutoCloseable {
             .writeTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build();
-        this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "URLWatcher-" + sanitizeForThreadName(url));
-            thread.setDaemon(true);
-            return thread;
-        });
+        this.scheduler = ExecutorFactory.newScheduledDaemon("URLWatcher-" + sanitizeForThreadName(url));
 
         if (loadInitialContent) {
             this.lastContent = fetchContent();
@@ -119,7 +116,7 @@ public abstract class URLWatcher implements AutoCloseable {
                 active = false;
             })
             .exceptionally(throwable -> {
-                log.error("Error fetching content asynchronously from " + url, throwable);
+                log.error("Error fetching content asynchronously from {}", url, throwable);
                 active = false;
                 return null;
             });
@@ -152,8 +149,8 @@ public abstract class URLWatcher implements AutoCloseable {
         log.info("Stopped watching {}", url);
     }
 
-    public String fetchContent() {
-        log.debug("Fetching content from " + url);
+    public @Nullable String fetchContent() {
+        log.debug("Fetching content from {}", url);
 
         Request.Builder requestBuilder = new Request.Builder().url(url);
 
@@ -177,20 +174,20 @@ public abstract class URLWatcher implements AutoCloseable {
                 return content;
             } else {
                 ScoutMetrics.URL_FETCHES.labels(url, "failure").inc();
-                log.error("Failed to fetch content from " + url + "! (Response: " + response + ")");
+                log.error("Failed to fetch content from {}! (Response: {})", url, response);
             }
         } catch (IOException exception) {
             double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
             ScoutMetrics.URL_FETCH_DURATION.labels(url).observe(durationSeconds);
             ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-            log.error("Failed to fetch content from " + url + "!", exception);
+            log.error("Failed to fetch content from {}!", url, exception);
         }
 
         return null;
     }
 
     public CompletableFuture<String> fetchContentAsync() {
-        log.debug("Fetching content asynchronously from " + url);
+        log.debug("Fetching content asynchronously from {}", url);
 
         Request.Builder requestBuilder = new Request.Builder().url(url);
 
@@ -210,7 +207,7 @@ public abstract class URLWatcher implements AutoCloseable {
                 double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
                 ScoutMetrics.URL_FETCH_DURATION.labels(url).observe(durationSeconds);
                 ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-                log.error("Failed to fetch content asynchronously from " + url, e);
+                log.error("Failed to fetch content asynchronously from {}", url, e);
                 future.complete(null);
             }
 
@@ -227,12 +224,12 @@ public abstract class URLWatcher implements AutoCloseable {
                         future.complete(content);
                     } else {
                         ScoutMetrics.URL_FETCHES.labels(url, "failure").inc();
-                        log.error("Failed to fetch content asynchronously from " + url + "! (Response: " + response + ")");
+                        log.error("Failed to fetch content asynchronously from {}! (Response: {})", url, response);
                         future.complete(null);
                     }
                 } catch (IOException e) {
                     ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-                    log.error("Error reading response body from " + url, e);
+                    log.error("Error reading response body from {}", url, e);
                     future.complete(null);
                 }
             }
@@ -242,7 +239,7 @@ public abstract class URLWatcher implements AutoCloseable {
     }
 
     public interface DataHandler {
-        void handleData(String oldContent, String newContent, List<Tuple<String, Object, Object>> changedValues);
+        void handleData(@Nullable String oldContent, String newContent, List<Tuple<String, Object, Object>> changedValues);
     }
 
     @Override

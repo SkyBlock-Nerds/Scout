@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import net.hypixel.nerdbot.scout.handler.status.StatusPageConfig;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -12,6 +13,6 @@ import java.util.List;
 @ToString
 public class WatcherAppConfig {
 
-    private List<WatcherConfig> watchers;
+    private @Nullable List<WatcherConfig> watchers;
     private StatusPageConfig statusPageConfig = new StatusPageConfig();
 }
