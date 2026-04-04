@@ -107,14 +107,13 @@ public class HypixelThreadURLWatcher extends XmlURLWatcher {
 
     private CompletableFuture<Void> seedBaseline() {
         return fetchContentAsync()
-            .handle((content, throwable) -> {
-                if (throwable != null) {
-                    log.error("Failed to seed baseline for {}", getUrl(), throwable);
-                    return null;
+            .thenAccept(result -> {
+                if (result.isFailure()) {
+                    log.error("Failed to seed baseline for {}", getUrl());
+                    initialised = false;
+                    return;
                 }
-                return content;
-            })
-            .thenAccept(content -> {
+                String content = result.orElse(null);
                 if (content != null) {
                     List<HypixelThread> hypixelThreads = parseThreads(content);
                     if (hypixelThreads != null && !hypixelThreads.isEmpty()) {

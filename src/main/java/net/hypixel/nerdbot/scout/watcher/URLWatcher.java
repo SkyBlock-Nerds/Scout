@@ -4,18 +4,19 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.hypixel.nerdbot.marmalade.concurrent.ExecutorFactory;
+import net.hypixel.nerdbot.marmalade.exception.HttpException;
 import net.hypixel.nerdbot.marmalade.format.StringUtils;
+import net.hypixel.nerdbot.marmalade.functional.Result;
+import net.hypixel.nerdbot.marmalade.resilience.Retry;
 import net.hypixel.nerdbot.marmalade.Tuple;
 import net.hypixel.nerdbot.scout.ScoutMetrics;
-import okhttp3.Call;
-import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +61,7 @@ public abstract class URLWatcher implements AutoCloseable {
         this.scheduler = ExecutorFactory.newScheduledDaemon("URLWatcher-" + sanitizeForThreadName(url));
 
         if (loadInitialContent) {
-            this.lastContent = fetchContent();
+            this.lastContent = fetchContent().orElse(null);
         }
     }
 
@@ -74,7 +75,12 @@ public abstract class URLWatcher implements AutoCloseable {
         }
 
         scheduledTask = scheduler.scheduleAtFixedRate(() -> fetchContentAsync()
-            .thenAccept(newContent -> {
+            .thenAccept(result -> {
+                if (result.isFailure()) {
+                    log.error("Failed to fetch content from {}: {}", url, result);
+                    return;
+                }
+                String newContent = result.orElse(null);
                 if (newContent != null && !newContent.equals(lastContent)) {
                     String oldCompact = StringUtils.toOneLine(lastContent);
                     String newCompact = StringUtils.toOneLine(newContent);
@@ -101,7 +107,13 @@ public abstract class URLWatcher implements AutoCloseable {
         active = true;
 
         fetchContentAsync()
-            .thenAccept(newContent -> {
+            .thenAccept(result -> {
+                if (result.isFailure()) {
+                    log.error("Failed to fetch content from {}: {}", url, result);
+                    active = false;
+                    return;
+                }
+                String newContent = result.orElse(null);
                 if (newContent != null && !newContent.equals(lastContent)) {
                     handler.handleData(
                         lastContent,
@@ -149,7 +161,12 @@ public abstract class URLWatcher implements AutoCloseable {
         log.info("Stopped watching {}", url);
     }
 
-    public @Nullable String fetchContent() {
+    /**
+     * Performs a single HTTP GET to {@link #url}, returning the response body on success or throwing
+     * {@link HttpException} on a non-successful status or network error. Intended to be called only
+     * from within {@link #fetchContent()}'s Retry wrapper.
+     */
+    private String fetchOnce() throws HttpException {
         log.debug("Fetching content from {}", url);
 
         Request.Builder requestBuilder = new Request.Builder().url(url);
@@ -175,67 +192,57 @@ public abstract class URLWatcher implements AutoCloseable {
             } else {
                 ScoutMetrics.URL_FETCHES.labels(url, "failure").inc();
                 log.error("Failed to fetch content from {}! (Response: {})", url, response);
+                throw new HttpException("HTTP " + response.code() + " for " + url, response.code(), url);
             }
-        } catch (IOException exception) {
+        } catch (HttpException e) {
+            throw e;
+        } catch (IOException e) {
             double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
             ScoutMetrics.URL_FETCH_DURATION.labels(url).observe(durationSeconds);
             ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-            log.error("Failed to fetch content from {}!", url, exception);
+            log.error("Failed to fetch content from {}!", url, e);
+            throw new HttpException("Network error fetching " + url, e);
         }
-
-        return null;
     }
 
-    public CompletableFuture<String> fetchContentAsync() {
-        log.debug("Fetching content asynchronously from {}", url);
-
-        Request.Builder requestBuilder = new Request.Builder().url(url);
-
-        if (headers != null) {
-            for (Map.Entry<String, String> entry : headers.entrySet()) {
-                requestBuilder.header(entry.getKey(), entry.getValue());
+    public Result<String, HttpException> fetchContent() {
+        try {
+            String content = Retry.of(this::fetchOnce)
+                .maxAttempts(3)
+                .delay(Duration.ofMillis(500))
+                .backoffMultiplier(2.0)
+                .retryOn(HttpException.class)
+                .execute();
+            return Result.success(content);
+        } catch (Retry.RetryExhaustedException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof HttpException httpException) {
+                return Result.failure(httpException);
             }
+            return Result.failure(new HttpException("Failed after retries: " + url, e));
         }
+    }
 
-        Request request = requestBuilder.build();
-        CompletableFuture<String> future = new CompletableFuture<>();
-        long startNanos = System.nanoTime();
-
-        client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
-                ScoutMetrics.URL_FETCH_DURATION.labels(url).observe(durationSeconds);
-                ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-                log.error("Failed to fetch content asynchronously from {}", url, e);
-                future.complete(null);
-            }
-
-            @Override
-            public void onResponse(@NotNull Call call, @NotNull Response response) {
-                double durationSeconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
-                ScoutMetrics.URL_FETCH_DURATION.labels(url).observe(durationSeconds);
-
-                try (response) {
-                    if (response.isSuccessful()) {
-                        ScoutMetrics.URL_FETCHES.labels(url, "success").inc();
-                        String content = response.body().string();
-                        log.debug("Successfully fetched content asynchronously from {}! (Content: {})", url, StringUtils.toOneLine(content));
-                        future.complete(content);
-                    } else {
-                        ScoutMetrics.URL_FETCHES.labels(url, "failure").inc();
-                        log.error("Failed to fetch content asynchronously from {}! (Response: {})", url, response);
-                        future.complete(null);
+    public CompletableFuture<Result<String, HttpException>> fetchContentAsync() {
+        log.debug("Fetching content asynchronously from {}", url);
+        return Retry.of(this::fetchOnce)
+            .maxAttempts(3)
+            .delay(Duration.ofMillis(500))
+            .backoffMultiplier(2.0)
+            .retryOn(HttpException.class)
+            .executeAsync()
+            .handle((content, throwable) -> {
+                if (throwable instanceof Retry.RetryExhaustedException retryEx) {
+                    Throwable cause = retryEx.getCause();
+                    if (cause instanceof HttpException httpException) {
+                        return Result.failure(httpException);
                     }
-                } catch (IOException e) {
-                    ScoutMetrics.URL_FETCHES.labels(url, "error").inc();
-                    log.error("Error reading response body from {}", url, e);
-                    future.complete(null);
+                    return Result.<String, HttpException>failure(new HttpException("Failed after retries: " + url, retryEx));
+                } else if (throwable != null) {
+                    return Result.<String, HttpException>failure(new HttpException("Network error fetching " + url, throwable));
                 }
-            }
-        });
-
-        return future;
+                return Result.<String, HttpException>success(content);
+            });
     }
 
     public interface DataHandler {
