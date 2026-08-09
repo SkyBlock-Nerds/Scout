@@ -78,11 +78,19 @@ public class SkyBlockThreadHandler extends DefaultHandler {
             case LINK:
                 latestThread().setLink(elementValue.toString());
                 break;
-            case GUID:
-                int guid;
-                guid = Integer.parseInt(elementValue.toString());
-                latestThread().setGuid(guid);
+            case GUID: {
+                // XenForo emits the thread id either bare or as "urn:xenforo:thread:<id>"
+                String rawGuid = elementValue.toString().trim();
+                String threadId = rawGuid.substring(rawGuid.lastIndexOf(':') + 1);
+
+                try {
+                    latestThread().setGuid(Integer.parseInt(threadId));
+                } catch (NumberFormatException exception) {
+                    log.warn("Skipping thread with unparseable guid: {}", rawGuid);
+                }
+
                 break;
+            }
             case CREATOR:
                 latestThread().setCreator(elementValue.toString());
                 break;
